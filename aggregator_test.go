@@ -98,6 +98,51 @@ func TestRunMergesDuplicatePrefixesPreferringHigherConfidence(t *testing.T) {
 	}
 }
 
+func TestRunMergesOnCanonicalPrefix(t *testing.T) {
+	// A source that hands back an unmasked prefix must still reconcile
+	// against another source's masked form of the same network.
+	unmasked := stubSource{name: "unmasked", level: Local, avail: Availability{Available: true},
+		findings: []Finding{{Network: mustPrefix(t, "192.168.1.10/24"), Confidence: Medium}}}
+	masked := stubSource{name: "masked", level: Local, avail: Availability{Available: true},
+		findings: []Finding{{Network: mustPrefix(t, "192.168.1.0/24"), Confidence: High}}}
+
+	report, err := Run(context.Background(), Local, unmasked, masked)
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(report.Networks) != 1 {
+		t.Fatalf("Networks = %v, want one merged finding", report.Networks)
+	}
+	if got := report.Networks[0].Network; got != mustPrefix(t, "192.168.1.0/24") {
+		t.Errorf("Network = %v, want the canonical masked form 192.168.1.0/24", got)
+	}
+	if report.Networks[0].Confidence != High {
+		t.Errorf("Confidence = %v, want High", report.Networks[0].Confidence)
+	}
+}
+
+func TestRunUnsetConfidenceDoesNotOutrank(t *testing.T) {
+	// Inferred is the zero value, so a source that forgets to set
+	// Confidence makes the weakest claim rather than the strongest.
+	prefix := mustPrefix(t, "10.0.0.0/24")
+	forgot := stubSource{name: "forgot", level: Local, avail: Availability{Available: true},
+		findings: []Finding{{Network: prefix, Via: Gateway, Source: "forgot"}}}
+	explicit := stubSource{name: "explicit", level: Local, avail: Availability{Available: true},
+		findings: []Finding{{Network: prefix, Via: Connected, Source: "explicit", Confidence: High}}}
+
+	report, err := Run(context.Background(), Local, forgot, explicit)
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if len(report.Networks) != 1 {
+		t.Fatalf("Networks = %v, want one merged finding", report.Networks)
+	}
+	got := report.Networks[0]
+	if got.Confidence != High || got.Source != "explicit" || got.Via != Connected {
+		t.Errorf("merged = %+v, want the explicitly-High source to win", got)
+	}
+}
+
 func TestRunPopulatesNetNS(t *testing.T) {
 	report, err := Run(context.Background(), Local)
 	if err != nil {

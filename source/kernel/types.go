@@ -24,6 +24,11 @@ type rawAddr struct {
 // rawRoute represents one kernel route. A zero-value (invalid) Dst means
 // the default route. An invalid Gateway means the route is on-link (no
 // next hop) and is therefore represented by a connected prefix instead.
+//
+// For a multipath (ECMP) route the kernel reports no single gateway;
+// Gateway then carries the first next hop that has one, so the route's
+// destination prefix is still reported rather than being mistaken for an
+// on-link route and dropped.
 type rawRoute struct {
 	LinkIndex int
 	Dst       netip.Prefix

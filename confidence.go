@@ -2,16 +2,16 @@
 
 package netscope
 
-// Confidence ranks how sure a Finding is. Lower values are stronger; High
-// is the zero value so an unset Confidence reads as the strongest claim
-// only when a Source deliberately sets it — Sources must always set this
-// field explicitly.
+// Confidence ranks how sure a Finding is. Higher values are stronger, and
+// Inferred is the zero value: a Source that forgets to set Confidence
+// makes the weakest possible claim rather than silently outranking a
+// Source that set it correctly.
 type Confidence int
 
 const (
-	High Confidence = iota
+	Inferred Confidence = iota
 	Medium
-	Inferred
+	High
 )
 
 func (c Confidence) String() string {

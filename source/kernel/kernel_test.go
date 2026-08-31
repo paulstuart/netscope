@@ -109,6 +109,56 @@ func TestDiscoverMultiHomedHost(t *testing.T) {
 	}
 }
 
+// TestSourceThroughRun exercises the seam between this package and the
+// aggregator: a kernel.Source backed by a fake client, driven by
+// netscope.Run rather than by calling Discover directly.
+func TestSourceThroughRun(t *testing.T) {
+	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
+	fake := fakeNetlink{
+		links: []rawLink{{Index: 1, Name: "eth0"}, {Index: 2, Name: "eth1"}},
+		addrs: []rawAddr{
+			{LinkIndex: 1, Prefix: mustPrefix(t, "192.168.1.10/24")},
+			{LinkIndex: 2, Prefix: mustPrefix(t, "10.0.0.5/24")},
+		},
+		routes: []rawRoute{
+			{LinkIndex: 1, Dst: netip.Prefix{}, Gateway: mustAddr(t, "192.168.1.1"), Table: 254},
+			{LinkIndex: 2, Dst: mustPrefix(t, "10.0.1.0/24"), Gateway: mustAddr(t, "10.0.0.1"), Table: 254},
+			{LinkIndex: 1, Dst: mustPrefix(t, "192.168.1.0/24"), Gateway: netip.Addr{}, Table: 254},
+		},
+		neighs: []rawNeigh{{LinkIndex: 1, Addr: mustAddr(t, "192.168.1.1"), HWAddr: mac}},
+	}
+
+	report, err := netscope.Run(context.Background(), netscope.Local, &Source{client: fake})
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	if len(report.Networks) != 4 {
+		t.Errorf("Networks = %d, want 4 (two connected, one gateway-reachable, one default); got %+v",
+			len(report.Networks), report.Networks)
+	}
+	if len(report.Sources) != 1 {
+		t.Fatalf("Sources = %+v, want exactly one result", report.Sources)
+	}
+	if report.Sources[0].Source != "kernel" || report.Sources[0].Status != netscope.Ran {
+		t.Errorf("Sources[0] = %+v, want Source=kernel Status=Ran", report.Sources[0])
+	}
+	if report.NetNS == 0 {
+		t.Error("Report.NetNS = 0, want a non-zero inode (tests run with a real /proc)")
+	}
+	if len(report.Devices) != 1 || report.Devices[0].Address != mustAddr(t, "192.168.1.1") {
+		t.Errorf("Devices = %+v, want the one neighbour hoisted to the report", report.Devices)
+	}
+	for _, f := range report.Networks {
+		if f.Network != f.Network.Masked() {
+			t.Errorf("Network %v is not in canonical masked form", f.Network)
+		}
+		if f.Confidence != netscope.High {
+			t.Errorf("Network %v Confidence = %v, want High", f.Network, f.Confidence)
+		}
+	}
+}
+
 func TestDiscoverAttachesNeighboursToConnectedPrefix(t *testing.T) {
 	mac, _ := net.ParseMAC("aa:bb:cc:dd:ee:ff")
 	fake := fakeNetlink{

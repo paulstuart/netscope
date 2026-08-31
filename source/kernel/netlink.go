@@ -7,6 +7,7 @@ import (
 	"net/netip"
 
 	"github.com/vishvananda/netlink"
+	"golang.org/x/sys/unix"
 )
 
 type netlinkAdapter struct{}
@@ -43,7 +44,17 @@ func (netlinkAdapter) Addrs() ([]rawAddr, error) {
 }
 
 func (netlinkAdapter) Routes() ([]rawRoute, error) {
-	routes, err := netlink.RouteList(nil, netlink.FAMILY_ALL)
+	// netlink.RouteList silently restricts its answer to the main table
+	// (254). Filtering on RT_TABLE_UNSPEC instead returns every table, so
+	// VRF and policy-routing setups can be attributed to the table their
+	// route actually came from. This also surfaces table 255 (local)
+	// routes, which carry no gateway and are dropped downstream by
+	// Discover's on-link check.
+	routes, err := netlink.RouteListFiltered(
+		netlink.FAMILY_ALL,
+		&netlink.Route{Table: unix.RT_TABLE_UNSPEC},
+		netlink.RT_FILTER_TABLE,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -51,18 +62,46 @@ func (netlinkAdapter) Routes() ([]rawRoute, error) {
 	for _, r := range routes {
 		rr := rawRoute{LinkIndex: r.LinkIndex, Table: r.Table}
 		if r.Dst != nil {
-			if p, ok := ipNetToPrefix(r.Dst); ok {
-				rr.Dst = p
+			p, ok := ipNetToPrefix(r.Dst)
+			if !ok {
+				// A present but unparseable destination must not be
+				// confused with an absent one, which is the sentinel for
+				// the default route. Drop the route instead.
+				continue
 			}
+			rr.Dst = p
 		}
-		if r.Gw != nil {
-			if addr, ok := netip.AddrFromSlice(r.Gw); ok {
-				rr.Gateway = addr.Unmap()
-			}
+		if gw, ok := routeGateway(r); ok {
+			rr.Gateway = gw
 		}
 		out = append(out, rr)
 	}
 	return out, nil
+}
+
+// routeGateway returns a route's next-hop gateway address. A multipath
+// (ECMP) route carries no Route.Gw at all — the kernel reports its next
+// hops in Route.MultiPath instead — so without this the route would look
+// on-link and be dropped, losing the destination prefix entirely. M0
+// records the first usable next hop, which is enough to emit one Finding
+// per destination prefix; enumerating every ECMP next hop is deferred.
+func routeGateway(r netlink.Route) (netip.Addr, bool) {
+	if r.Gw != nil {
+		addr, ok := netip.AddrFromSlice(r.Gw)
+		if !ok {
+			return netip.Addr{}, false
+		}
+		return addr.Unmap(), true
+	}
+	for _, nh := range r.MultiPath {
+		if nh == nil || nh.Gw == nil {
+			continue // on-link next hop; carries no gateway address
+		}
+		if addr, ok := netip.AddrFromSlice(nh.Gw); ok {
+			return addr.Unmap(), true
+		}
+	}
+	return netip.Addr{}, false
 }
 
 func (netlinkAdapter) Neighbours() ([]rawNeigh, error) {
@@ -94,6 +133,19 @@ func ipNetToPrefix(ipNet *net.IPNet) (netip.Prefix, bool) {
 		return netip.Prefix{}, false
 	}
 	addr = addr.Unmap()
-	ones, _ := ipNet.Mask.Size()
-	return netip.PrefixFrom(addr, ones), true
+	ones, bits := ipNet.Mask.Size()
+	if bits == 0 {
+		// net.IPMask.Size reports (0, 0) for a non-contiguous mask. A
+		// legitimate all-zero mask still reports its width (32 or 128),
+		// so bits == 0 means the mask was malformed — reporting it as a
+		// /0 would fabricate a default route.
+		return netip.Prefix{}, false
+	}
+	prefix := netip.PrefixFrom(addr, ones)
+	if !prefix.IsValid() {
+		// Mask width and address family disagree (e.g. a /104 on an
+		// unmapped IPv4 address).
+		return netip.Prefix{}, false
+	}
+	return prefix, true
 }
