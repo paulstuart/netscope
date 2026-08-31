@@ -29,7 +29,7 @@ if err != nil {
     log.Fatal(err)
 }
 for _, f := range report.Networks {
-    fmt.Printf("%-18s via=%-9s hops=%d scannable=%v\n", f.Network, f.Via, f.Hops, f.Scannable)
+    fmt.Printf("%-20s via=%-10s hops=%d scannable=%v table=%d\n", f.Network, f.Via, f.Hops, f.Scannable, f.Table)
 }
 ```
 
