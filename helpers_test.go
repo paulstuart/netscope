@@ -15,3 +15,12 @@ func mustPrefix(t *testing.T, s string) netip.Prefix {
 	}
 	return p
 }
+
+func mustAddr(t *testing.T, s string) netip.Addr {
+	t.Helper()
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		t.Fatalf("ParseAddr(%q): %v", s, err)
+	}
+	return a
+}
