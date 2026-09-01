@@ -1,5 +1,3 @@
-//go:build linux
-
 // Package netscope answers one question about the host it runs on: which
 // networks can this machine actually reach, and how do we know?
 //

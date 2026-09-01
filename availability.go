@@ -1,5 +1,3 @@
-//go:build linux
-
 package netscope
 
 // Availability reports whether a Source can run in the current

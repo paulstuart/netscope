@@ -1,10 +1,9 @@
-//go:build linux
-
 package netscope
 
 import (
 	"context"
 	"errors"
+	"runtime"
 	"testing"
 )
 
@@ -148,7 +147,13 @@ func TestRunPopulatesNetNS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
-	if report.NetNS == 0 {
-		t.Error("Report.NetNS = 0, want a non-zero inode")
+	if runtime.GOOS == "linux" {
+		if report.NetNS == 0 {
+			t.Error("Report.NetNS = 0, want a non-zero inode on Linux")
+		}
+	} else {
+		if report.NetNS != 0 {
+			t.Errorf("Report.NetNS = %d, want 0 on non-Linux", report.NetNS)
+		}
 	}
 }

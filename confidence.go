@@ -1,5 +1,3 @@
-//go:build linux
-
 package netscope
 
 // Confidence ranks how sure a Finding is. Higher values are stronger, and

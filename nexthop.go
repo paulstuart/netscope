@@ -1,5 +1,3 @@
-//go:build linux
-
 package netscope
 
 // Nexthop describes how a Finding's network is reached.

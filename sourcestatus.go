@@ -1,5 +1,3 @@
-//go:build linux
-
 package netscope
 
 // SourceStatus records what happened when a Source ran, distinguishing an

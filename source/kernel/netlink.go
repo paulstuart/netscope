@@ -3,7 +3,6 @@
 package kernel
 
 import (
-	"net"
 	"net/netip"
 
 	"github.com/vishvananda/netlink"
@@ -122,30 +121,4 @@ func (netlinkAdapter) Neighbours() ([]rawNeigh, error) {
 		})
 	}
 	return out, nil
-}
-
-func ipNetToPrefix(ipNet *net.IPNet) (netip.Prefix, bool) {
-	if ipNet == nil {
-		return netip.Prefix{}, false
-	}
-	addr, ok := netip.AddrFromSlice(ipNet.IP)
-	if !ok {
-		return netip.Prefix{}, false
-	}
-	addr = addr.Unmap()
-	ones, bits := ipNet.Mask.Size()
-	if bits == 0 {
-		// net.IPMask.Size reports (0, 0) for a non-contiguous mask. A
-		// legitimate all-zero mask still reports its width (32 or 128),
-		// so bits == 0 means the mask was malformed — reporting it as a
-		// /0 would fabricate a default route.
-		return netip.Prefix{}, false
-	}
-	prefix := netip.PrefixFrom(addr, ones)
-	if !prefix.IsValid() {
-		// Mask width and address family disagree (e.g. a /104 on an
-		// unmapped IPv4 address).
-		return netip.Prefix{}, false
-	}
-	return prefix, true
 }

@@ -1,11 +1,10 @@
-//go:build linux
-
 package kernel
 
 import (
 	"context"
 	"net"
 	"net/netip"
+	"runtime"
 	"testing"
 
 	"github.com/paulstuart/netscope"
@@ -143,7 +142,7 @@ func TestSourceThroughRun(t *testing.T) {
 	if report.Sources[0].Source != "kernel" || report.Sources[0].Status != netscope.Ran {
 		t.Errorf("Sources[0] = %+v, want Source=kernel Status=Ran", report.Sources[0])
 	}
-	if report.NetNS == 0 {
+	if runtime.GOOS == "linux" && report.NetNS == 0 {
 		t.Error("Report.NetNS = 0, want a non-zero inode (tests run with a real /proc)")
 	}
 	if len(report.Devices) != 1 || report.Devices[0].Address != mustAddr(t, "192.168.1.1") {

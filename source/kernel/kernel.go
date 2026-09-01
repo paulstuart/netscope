@@ -1,9 +1,8 @@
-//go:build linux
-
 package kernel
 
 import (
 	"context"
+	"net"
 	"net/netip"
 	"time"
 
@@ -11,12 +10,13 @@ import (
 )
 
 // Source is the Local-tier Source that reads the kernel's routing table,
-// interface addresses, and neighbour cache via netlink.
+// interface addresses, and neighbour cache (via netlink on Linux, or
+// routing sockets on BSD/macOS).
 type Source struct {
 	client netlinkClient
 }
 
-// New returns a kernel Source backed by the real netlink library.
+// New returns a kernel Source backed by the host's routing facilities.
 func New() *Source {
 	return &Source{client: newNetlinkAdapter()}
 }
@@ -118,4 +118,30 @@ func (s *Source) Discover(ctx context.Context) ([]netscope.Finding, error) {
 	}
 
 	return findings, nil
+}
+
+func ipNetToPrefix(ipNet *net.IPNet) (netip.Prefix, bool) {
+	if ipNet == nil {
+		return netip.Prefix{}, false
+	}
+	addr, ok := netip.AddrFromSlice(ipNet.IP)
+	if !ok {
+		return netip.Prefix{}, false
+	}
+	addr = addr.Unmap()
+	ones, bits := ipNet.Mask.Size()
+	if bits == 0 {
+		// net.IPMask.Size reports (0, 0) for a non-contiguous mask. A
+		// legitimate all-zero mask still reports its width (32 or 128),
+		// so bits == 0 means the mask was malformed — reporting it as a
+		// /0 would fabricate a default route.
+		return netip.Prefix{}, false
+	}
+	prefix := netip.PrefixFrom(addr, ones)
+	if !prefix.IsValid() {
+		// Mask width and address family disagree (e.g. a /104 on an
+		// unmapped IPv4 address).
+		return netip.Prefix{}, false
+	}
+	return prefix, true
 }

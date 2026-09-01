@@ -1,5 +1,3 @@
-//go:build linux
-
 package netscope
 
 // SourceResult records what happened when the aggregator ran one Source,
